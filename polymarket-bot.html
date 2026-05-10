@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0a0e1a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>ARB.SCAN — Polymarket Inefficiency Scanner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  :root {
+    --bg-0: #0a0e1a; --bg-1: #111726; --bg-2: #1a2236;
+    --line: #243049; --text: #e8ecf5; --text-dim: #8a96b0; --text-faint: #4a5572;
+    --green: #00d97e; --red: #ff4757; --amber: #ffb547; --cyan: #00d4ff;
+  }
+  html, body { background: var(--bg-0); color: var(--text); font-family: 'Space Grotesk', sans-serif; overflow-x: hidden; min-height: 100vh; }
+  body::before { content: ''; position: fixed; inset: 0; background: radial-gradient(circle at 10% 0%, rgba(0,212,255,0.08), transparent 40%), radial-gradient(circle at 90% 100%, rgba(167,139,250,0.06), transparent 40%); pointer-events: none; z-index: 0; }
+  .mono { font-family: 'JetBrains Mono', monospace; }
+  header { position: sticky; top: 0; z-index: 100; background: rgba(10,14,26,0.85); backdrop-filter: blur(20px); border-bottom: 1px solid var(--line); padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; }
+  .brand { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; letter-spacing: 1px; }
+  .brand .dot { color: var(--green); }
+  .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 20px; background: var(--bg-2); border: 1px solid var(--line); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+  .pulse.off { background: var(--text-faint); animation: none; }
+  @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(0,217,126,0.6); } 50% { box-shadow: 0 0 0 6px rgba(0,217,126,0); } }
+  .tabs { display: flex; gap: 4px; padding: 12px 20px 0; border-bottom: 1px solid var(--line); overflow-x: auto; background: var(--bg-0); position: sticky; top: 53px; z-index: 90; }
+  .tab { padding: 10px 16px; border: none; background: transparent; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; font-size: 12px; cursor: pointer; white-space: nowrap; border-bottom: 2px solid transparent; transition: all 0.2s; }
+  .tab.active { color: var(--cyan); border-bottom-color: var(--cyan); }
+  main { padding: 20px; position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; }
+  .panel { display: none; }
+  .panel.active { display: block; animation: fadeIn 0.3s; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .stat { background: var(--bg-1); border: 1px solid var(--line); border-radius: 12px; padding: 16px; position: relative; overflow: hidden; }
+  .stat::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--cyan), transparent); }
+  .stat .label { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+  .stat .value { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 700; }
+  .stat .delta { font-family: 'JetBrains Mono', monospace; font-size: 11px; margin-top: 4px; }
+  .stat.green .value, .delta.up { color: var(--green); }
+  .stat.red .value, .delta.down { color: var(--red); }
+  .stat.amber .value { color: var(--amber); }
+  .opps-list { display: flex; flex-direction: column; gap: 12px; }
+  .opp { background: var(--bg-1); border: 1px solid var(--line); border-left: 3px solid var(--cyan); border-radius: 10px; padding: 14px; cursor: pointer; transition: all 0.2s; }
+  .opp:active { transform: scale(0.98); }
+  .opp.hot { border-left-color: var(--green); }
+  .opp.warn { border-left-color: var(--amber); }
+  .opp-head { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 12px; }
+  .opp-title { font-size: 14px; font-weight: 500; line-height: 1.4; flex: 1; }
+  .opp-spread { font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 16px; color: var(--green); white-space: nowrap; }
+  .opp-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+  .price-cell { background: var(--bg-2); border-radius: 6px; padding: 10px; font-family: 'JetBrains Mono', monospace; }
+  .price-cell .platform { font-size: 9px; color: var(--text-faint); text-transform: uppercase; }
+  .price-cell .price { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .price-cell.buy .price { color: var(--green); }
+  .price-cell.sell .price { color: var(--red); }
+  .strategy-tag { display: inline-block; font-size: 10px; padding: 3px 8px; border-radius: 4px; font-family: 'JetBrains Mono', monospace; background: rgba(0,212,255,0.15); color: var(--cyan); margin-top: 8px; }
+  .section-title { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; margin: 24px 0 12px; }
+  .setting-card { background: var(--bg-1); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 10px; }
+  .setting-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .setting-row:last-child { margin-bottom: 0; }
+  .setting-label { font-size: 13px; }
+  .setting-hint { font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+  input[type="number"], input[type="text"], input[type="password"], select { background: var(--bg-2); border: 1px solid var(--line); color: var(--text); padding: 8px 12px; border-radius: 6px; font-family: 'JetBrains Mono', monospace; font-size: 13px; width: 120px; text-align: right; }
+  input[type="text"], input[type="password"] { width: 100%; text-align: left; }
+  .toggle { position: relative; width: 44px; height: 24px; background: var(--bg-2); border-radius: 12px; cursor: pointer; transition: background 0.2s; border: 1px solid var(--line); }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; background: var(--text-dim); border-radius: 50%; transition: all 0.2s; }
+  .toggle.on { background: rgba(0,217,126,0.2); border-color: var(--green); }
+  .toggle.on::after { left: 22px; background: var(--green); }
+  button.action { background: var(--cyan); color: var(--bg-0); border: none; padding: 12px 20px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-weight: 700; font-size: 13px; cursor: pointer; width: 100%; margin-top: 12px; transition: all 0.15s; }
+  button.action:active { transform: scale(0.97); }
+  button.action.danger { background: var(--red); color: white; }
+  button.action.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .log-list { display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .log-entry { background: var(--bg-1); border-left: 2px solid var(--line); padding: 8px 12px; border-radius: 4px; display: grid; grid-template-columns: 70px 60px 1fr; gap: 8px; align-items: center; }
+  .log-entry.info { border-left-color: var(--cyan); }
+  .log-entry.win { border-left-color: var(--green); }
+  .log-entry.err { border-left-color: var(--red); }
+  .log-entry.warn { border-left-color: var(--amber); }
+  .log-time { color: var(--text-faint); font-size: 10px; }
+  .log-tag { font-size: 9px; padding: 2px 6px; border-radius: 3px; background: var(--bg-2); text-align: center; }
+  .log-msg { color: var(--text); word-break: break-word; }
+  .warn-banner { background: linear-gradient(135deg, rgba(255,71,87,0.12), rgba(255,181,71,0.12)); border: 1px solid rgba(255,181,71,0.3); border-radius: 10px; padding: 14px 16px; margin-bottom: 20px; font-size: 12px; line-height: 1.5; }
+  .warn-banner strong { color: var(--amber); display: block; margin-bottom: 4px; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .empty { text-align: center; padding: 40px 20px; color: var(--text-faint); font-size: 13px; }
+  @media (max-width: 600px) { main { padding: 14px; } .stat .value { font-size: 18px; } }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">ARB<span class="dot">.</span>SCAN</div>
+  <div class="status-pill"><div class="pulse" id="statusDot"></div><span id="statusText">SCANNING</span></div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="scan">SCANNER</button>
+  <button class="tab" data-tab="trades">POSISI</button>
+  <button class="tab" data-tab="settings">PENGATURAN</button>
+  <button class="tab" data-tab="log">LOG</button>
+  <button class="tab" data-tab="info">INFO</button>
+</nav>
+
+<main>
+  <div class="panel active" id="panel-scan">
+    <div class="stats">
+      <div class="stat green"><div class="label">Profit Hari Ini</div><div class="value mono" id="todayPnl">$0.00</div><div class="delta up mono" id="todayPnlDelta">+0.0%</div></div>
+      <div class="stat"><div class="label">Total Scan</div><div class="value mono" id="totalScans">0</div><div class="delta mono">last: <span id="lastScan">--:--</span></div></div>
+      <div class="stat amber"><div class="label">Peluang Aktif</div><div class="value mono" id="oppCount">0</div><div class="delta mono" id="oppHottest">--</div></div>
+      <div class="stat"><div class="label">Saldo</div><div class="value mono" id="balance">$0.00</div><div class="delta mono">USDC</div></div>
+    </div>
+    <div class="section-title">PELUANG ARBITRASE</div>
+    <div class="opps-list" id="oppsList">
+      <div class="empty">Memindai pasar Polymarket...<br><span style="font-size:11px;opacity:0.6">Tunggu beberapa detik untuk cycle pertama</span></div>
+    </div>
+  </div>
+  
+  <div class="panel" id="panel-trades">
+    <div class="section-title">RIWAYAT SIMULASI</div>
+    <div id="historyList" class="log-list"><div class="empty">Belum ada riwayat trade</div></div>
+  </div>
+  
+  <div class="panel" id="panel-settings">
+    <div class="warn-banner">
+      <strong>⚠ PERINGATAN</strong>
+      Bot ini default <strong>SIMULASI</strong>. Trading otomatis berisiko kehilangan modal 100%. Mulai dengan modal kecil.
+    </div>
+    
+    <div class="section-title">KREDENSIAL POLYMARKET (OPSIONAL)</div>
+    <div class="setting-card">
+      <div class="setting-row" style="display:block">
+        <div class="setting-label">Wallet Address</div>
+        <div class="setting-hint">Address dari Polymarket → Profile → Settings</div>
+        <input type="text" id="pmAddress" placeholder="0x..." style="margin-top:8px">
+      </div>
+    </div>
+    <div class="setting-card">
+      <div class="setting-row" style="display:block">
+        <div class="setting-label">API Key</div>
+        <div class="setting-hint">clob.polymarket.com → Create API Key</div>
+        <input type="password" id="pmKey" placeholder="••••••••" style="margin-top:8px">
+      </div>
+    </div>
+    <div class="setting-card">
+      <div class="setting-row" style="display:block">
+        <div class="setting-label">API Secret</div>
+        <input type="password" id="pmSecret" placeholder="••••••••" style="margin-top:8px">
+      </div>
+      <div class="setting-row" style="display:block; margin-top:12px">
+        <div class="setting-label">API Passphrase</div>
+        <input type="password" id="pmPass" placeholder="••••••••" style="margin-top:8px">
+      </div>
+    </div>
+    
+    <div class="section-title">FILTER PASAR</div>
+    <div class="setting-card">
+      <div class="setting-row">
+        <div><div class="setting-label">Volume Minimum 24h ($)</div><div class="setting-hint">Skip market kecil yang ilikuid</div></div>
+        <input type="number" id="minVolume" value="10000" min="0">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Likuiditas Minimum ($)</div></div>
+        <input type="number" id="minLiquidity" value="5000" min="0">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Jumlah Market Discan</div><div class="setting-hint">Lebih banyak = scan lebih lama</div></div>
+        <input type="number" id="marketLimit" value="30" min="5" max="100">
+      </div>
+    </div>
+    
+    <div class="section-title">MANAJEMEN RISIKO</div>
+    <div class="setting-card">
+      <div class="setting-row">
+        <div><div class="setting-label">Maksimal per Trade (USDC)</div></div>
+        <input type="number" id="maxTrade" value="10" min="1">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Limit Kerugian Harian (USDC)</div></div>
+        <input type="number" id="dailyLoss" value="20" min="1">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Minimum Spread (%)</div></div>
+        <input type="number" id="minSpread" value="2" min="0.5" step="0.5">
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Max Slippage (%)</div></div>
+        <input type="number" id="maxSlip" value="1" min="0.1" step="0.1">
+      </div>
+    </div>
+    
+    <div class="section-title">MODE</div>
+    <div class="setting-card">
+      <div class="setting-row">
+        <div><div class="setting-label">Mode Simulasi</div><div class="setting-hint">Trading kertas tanpa uang nyata</div></div>
+        <div class="toggle on" id="simToggle"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Auto-Execute (Simulasi)</div><div class="setting-hint">Eksekusi otomatis di paper trading</div></div>
+        <div class="toggle" id="autoToggle"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Notifikasi Suara</div></div>
+        <div class="toggle on" id="soundToggle"></div>
+      </div>
+      <div class="setting-row">
+        <div><div class="setting-label">Interval Scan (detik)</div></div>
+        <input type="number" id="scanInterval" value="5" min="3" max="60">
+      </div>
+    </div>
+    
+    <button class="action" onclick="saveSettings()">SIMPAN PENGATURAN</button>
+    <button class="action ghost" onclick="testConnection()">TEST KONEKSI POLYMARKET</button>
+    <button class="action danger" onclick="emergencyStop()">EMERGENCY STOP</button>
+  </div>
+  
+  <div class="panel" id="panel-log">
+    <div class="section-title">LOG SISTEM (50 TERAKHIR)</div>
+    <div class="log-list" id="logList"></div>
+    <button class="action ghost" onclick="clearLog()" style="margin-top:16px">BERSIHKAN LOG</button>
+  </div>
+  
+  <div class="panel" id="panel-info">
+    <div class="warn-banner">
+      <strong>⚠ BACA DULU SEBELUM PAKAI UANG NYATA</strong>
+      Tools ini disediakan APA ADANYA. Tidak ada jaminan profit. Anda bertanggung jawab penuh atas semua trade.
+    </div>
+    
+    <div class="section-title">CARA KERJA — 3 STRATEGI DETEKSI</div>
+    <div class="setting-card" style="font-size:13px; line-height:1.6">
+      <p><strong style="color:var(--cyan)">1. Binary Sum Arbitrage (YES + NO ≠ $1.00)</strong></p>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:4px">Di market binary, harga YES + harga NO seharusnya = $1.00. Saat sum &lt; $0.97, beli kedua sisi → profit dijamin saat resolve. Saat sum &gt; $1.03, sebaliknya.</p>
+      <p style="margin-top:12px"><strong style="color:var(--cyan)">2. Multi-Outcome Sum (Categorical Events)</strong></p>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:4px">Untuk event seperti "Siapa Presiden 2028?" dengan banyak kandidat, total semua harga YES seharusnya = $1.00. Jika &lt; $0.95, beli semua = profit dijamin saat resolve.</p>
+      <p style="margin-top:12px"><strong style="color:var(--cyan)">3. Wide Bid-Ask Spread (Market Making)</strong></p>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:4px">Order book dengan bid-ask gap besar. Strategi: pasang limit order di tengah, ambil spread.</p>
+    </div>
+    
+    <div class="section-title">REALITA YANG PERLU DIPAHAMI</div>
+    <div class="setting-card" style="font-size:12px; line-height:1.7; color:var(--text-dim)">
+      <p>• Market besar (volume jutaan dolar) jarang punya inefisiensi &gt;1% karena banyak bot pro yang menjaga harga.</p>
+      <p style="margin-top:8px">• Inefisiensi 2-5% biasanya muncul di market kecil dengan likuiditas tipis — tapi slippage akan menggigit.</p>
+      <p style="margin-top:8px">• Setiap trade bayar gas Polygon (~$0.20-0.50). Pastikan profit &gt; gas + 2% buffer.</p>
+      <p style="margin-top:8px">• Strategi YES+NO arbitrage butuh modal 2x: $5 untuk YES + $5 untuk NO = $10 total terkunci sampai resolve (bisa berbulan-bulan).</p>
+      <p style="margin-top:8px">• Polymarket diblokir di AS. Pastikan akses Anda legal di yurisdiksi Anda.</p>
+      <p style="margin-top:8px">• Mulai dengan mode simulasi minimal 2 minggu. Jika tidak profit di simulasi, tidak akan profit di live.</p>
+    </div>
+    
+    <div class="section-title">SETUP UNTUK TRADING NYATA</div>
+    <div class="setting-card" style="font-size:12px; line-height:1.7">
+      <p>1. Buat akun di polymarket.com</p>
+      <p>2. Deposit USDC ke wallet Polymarket (jaringan Polygon)</p>
+      <p>3. Buka clob.polymarket.com → Create API Credentials</p>
+      <p>4. Masukkan API Key/Secret/Passphrase di tab Pengaturan</p>
+      <p>5. Test koneksi → pastikan saldo tampil benar</p>
+      <p>6. Set Manajemen Risiko KECIL dulu (max trade $5)</p>
+      <p>7. Jalankan dalam mode SIMULASI selama 1-2 minggu</p>
+      <p>8. Hanya nonaktifkan mode simulasi setelah Anda paham polanya</p>
+    </div>
+    
+    <div class="section-title">EKSEKUSI MANUAL VS OTOMATIS</div>
+    <div class="setting-card" style="font-size:12px; line-height:1.7">
+      <p>Bot ini <strong style="color:var(--amber)">tidak eksekusi live order langsung dari browser</strong> karena private key tidak boleh disimpan di browser (resiko keamanan parah).</p>
+      <p style="margin-top:8px">Saat peluang muncul, tap kartu → Polymarket terbuka → eksekusi manual. Total waktu ~10-20 detik.</p>
+      <p style="margin-top:8px">Untuk eksekusi otomatis penuh, butuh backend server Node.js. Minta Claude buat backend jika Anda butuh.</p>
+    </div>
+    
+    <div class="section-title">INSTALL SEBAGAI APP DI TABLET ANDROID</div>
+    <div class="setting-card" style="font-size:12px; line-height:1.7">
+      <p>1. Buka file ini di Chrome Android</p>
+      <p>2. Menu (⋮) → "Install app" atau "Add to Home screen"</p>
+      <p>3. Icon akan muncul di home screen, jalan seperti app native</p>
+      <p>4. Untuk akses 24/7, host file ini di server (Vercel/Netlify gratis)</p>
+    </div>
+  </div>
+</main>
+
+<script>
+const STORAGE_KEY = 'arb_scan_v2';
+const state = {
+  settings: {
+    pmAddress: '', pmKey: '', pmSecret: '', pmPass: '',
+    minVolume: 10000, minLiquidity: 5000, marketLimit: 30,
+    maxTrade: 10, dailyLoss: 20, minSpread: 2, maxSlip: 1,
+    simulation: true, autoExecute: false, sound: true, scanInterval: 5
+  },
+  scanning: false, todayPnl: 0, totalScans: 0, balance: 0,
+  opportunities: [], history: [], log: []
+};
+
+function loadState() {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      Object.assign(state.settings, parsed.settings || {});
+      state.todayPnl = parsed.todayPnl || 0;
+      state.history = parsed.history || [];
+    }
+  } catch(e) {}
+}
+function saveState() {
+  try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ settings: state.settings, todayPnl: state.todayPnl, history: state.history.slice(0, 50) })); } catch(e) {}
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+    if (t.dataset.tab === 'trades') renderHistory();
+  });
+});
+
+['simToggle','autoToggle','soundToggle'].forEach(id => {
+  document.getElementById(id).addEventListener('click', e => {
+    e.currentTarget.classList.toggle('on');
+    const map = {simToggle:'simulation', autoToggle:'autoExecute', soundToggle:'sound'};
+    state.settings[map[id]] = e.currentTarget.classList.contains('on');
+    if (id === 'simToggle' && !state.settings.simulation) log('warn','MODE','LIVE MODE diaktifkan.');
+    saveState();
+  });
+});
+
+function log(level, tag, msg) {
+  const time = new Date().toLocaleTimeString('id-ID', {hour12:false});
+  state.log.unshift({time, level, tag, msg});
+  if (state.log.length > 50) state.log.pop();
+  renderLog();
+  if (level === 'win' && state.settings.sound) beep(880, 100);
+  if (level === 'err' && state.settings.sound) beep(220, 200);
+}
+function renderLog() {
+  const el = document.getElementById('logList');
+  if (!state.log.length) { el.innerHTML = '<div class="empty">Log kosong</div>'; return; }
+  el.innerHTML = state.log.map(e => `<div class="log-entry ${e.level}"><div class="log-time">${e.time}</div><div class="log-tag">${e.tag}</div><div class="log-msg">${escapeHtml(e.msg)}</div></div>`).join('');
+}
+function clearLog() { state.log = []; renderLog(); }
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]); }
+
+let audioCtx;
+function beep(freq, dur) {
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.connect(g); g.connect(audioCtx.destination);
+    o.frequency.value = freq; o.type = 'sine';
+    g.gain.setValueAtTime(0.1, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur/1000);
+    o.start(); o.stop(audioCtx.currentTime + dur/1000);
+  } catch(e) {}
+}
+
+function saveSettings() {
+  const ids = ['pmAddress','pmKey','pmSecret','pmPass','minVolume','minLiquidity','marketLimit','maxTrade','dailyLoss','minSpread','maxSlip','scanInterval'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) state.settings[id] = el.type === 'number' ? parseFloat(el.value) : el.value;
+  });
+  saveState();
+  log('info','CFG','Pengaturan disimpan');
+  startScanning();
+}
+function loadSettingsToUI() {
+  Object.entries(state.settings).forEach(([k, v]) => {
+    const el = document.getElementById(k);
+    if (el && el.type !== 'checkbox') el.value = v;
+  });
+  document.getElementById('simToggle').classList.toggle('on', state.settings.simulation);
+  document.getElementById('autoToggle').classList.toggle('on', state.settings.autoExecute);
+  document.getElementById('soundToggle').classList.toggle('on', state.settings.sound);
+}
+
+const POLY_GAMMA = 'https://gamma-api.polymarket.com';
+
+async function fetchPolymarketMarkets() {
+  try {
+    const res = await fetch(`${POLY_GAMMA}/markets?active=true&closed=false&limit=${state.settings.marketLimit}&order=volume24hr&ascending=false`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.data || []);
+  } catch(e) { log('err','POLY','Gagal fetch markets: ' + e.message); return []; }
+}
+async function fetchPolymarketEvents() {
+  try {
+    const res = await fetch(`${POLY_GAMMA}/events?active=true&closed=false&limit=20&order=volume24hr&ascending=false`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data : (data.data || []);
+  } catch(e) { return []; }
+}
+
+async function testConnection() {
+  log('info','TEST','Menguji koneksi ke Polymarket...');
+  const markets = await fetchPolymarketMarkets();
+  if (markets.length) {
+    log('win','TEST',`✓ Terhubung. ${markets.length} market aktif ditemukan.`);
+    if (state.settings.pmAddress) log('info','TEST','Wallet address tersimpan.');
+    else log('warn','TEST','Wallet address belum diisi (opsional untuk simulasi).');
+  } else {
+    log('err','TEST','✗ Gagal terhubung. Cek koneksi internet atau VPN.');
+  }
+}
+
+function detectInternalArbitrage(market) {
+  try {
+    const prices = market.outcomePrices ? JSON.parse(market.outcomePrices) : null;
+    if (!prices || prices.length !== 2) return null;
+    const yes = parseFloat(prices[0]), no = parseFloat(prices[1]);
+    if (!yes || !no || yes <= 0 || no <= 0 || yes >= 1 || no >= 1) return null;
+    const sum = yes + no;
+    const spreadPct = Math.abs(1 - sum) * 100;
+    if (spreadPct < state.settings.minSpread) return null;
+    return {
+      type: 'BINARY_SUM',
+      strategy: sum < 1 ? 'BUY YES + BUY NO' : 'SELL YES + SELL NO',
+      yes, no, sum, spread: spreadPct
+    };
+  } catch(e) { return null; }
+}
+
+function detectMultiOutcomeArbitrage(event) {
+  try {
+    if (!event.markets || event.markets.length < 2) return null;
+    let totalYes = 0, validCount = 0;
+    const outcomes = [];
+    for (const m of event.markets) {
+      if (!m.outcomePrices) continue;
+      const prices = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
+      if (!prices || !prices[0]) continue;
+      const yesPrice = parseFloat(prices[0]);
+      if (yesPrice > 0 && yesPrice < 1) {
+        totalYes += yesPrice;
+        validCount++;
+        outcomes.push({name: m.groupItemTitle || m.question, price: yesPrice});
+      }
+    }
+    if (validCount < 2) return null;
+    const spreadPct = Math.abs(1 - totalYes) * 100;
+    if (spreadPct < state.settings.minSpread) return null;
+    return {
+      type: 'MULTI_SUM',
+      strategy: totalYes < 1 ? `BUY ALL ${validCount} YES (sum=${totalYes.toFixed(3)})` : `SHORT ALL ${validCount} YES (sum=${totalYes.toFixed(3)})`,
+      sum: totalYes, outcomes, spread: spreadPct
+    };
+  } catch(e) { return null; }
+}
+
+function detectThinSpread(market) {
+  try {
+    const bestBid = parseFloat(market.bestBid || 0), bestAsk = parseFloat(market.bestAsk || 0);
+    if (!bestBid || !bestAsk) return null;
+    const spread = bestAsk - bestBid;
+    if (spread <= 0) return null;
+    const spreadPct = (spread / bestAsk) * 100;
+    if (spreadPct >= 2 && spreadPct >= state.settings.minSpread) {
+      return { type: 'WIDE_BID_ASK', strategy: `MAKE: bid ${bestBid.toFixed(3)} / ask ${bestAsk.toFixed(3)}`, bestBid, bestAsk, spread: spreadPct };
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+async function scanCycle() {
+  state.totalScans++;
+  document.getElementById('totalScans').textContent = state.totalScans;
+  document.getElementById('lastScan').textContent = new Date().toLocaleTimeString('id-ID', {hour12:false}).slice(0,5);
+  
+  const [markets, events] = await Promise.all([fetchPolymarketMarkets(), fetchPolymarketEvents()]);
+  if (!markets.length) { setStatus(false, 'NO DATA'); return; }
+  setStatus(true, state.settings.simulation ? 'SIM MODE' : 'LIVE');
+  
+  const newOpps = [];
+  const filtered = markets.filter(m => {
+    const vol = parseFloat(m.volume24hr || 0), liq = parseFloat(m.liquidity || 0);
+    return vol >= state.settings.minVolume && liq >= state.settings.minLiquidity;
+  });
+  
+  for (const m of filtered) {
+    const a = detectInternalArbitrage(m);
+    if (a) newOpps.push({ id: 'bin_' + (m.id || m.conditionId), title: m.question, ...a, volume: parseFloat(m.volume24hr || 0), liquidity: parseFloat(m.liquidity || 0), url: `https://polymarket.com/event/${m.slug || m.id}` });
+    const b = detectThinSpread(m);
+    if (b) newOpps.push({ id: 'thin_' + (m.id || m.conditionId), title: m.question, ...b, volume: parseFloat(m.volume24hr || 0), liquidity: parseFloat(m.liquidity || 0), url: `https://polymarket.com/event/${m.slug || m.id}` });
+  }
+  for (const e of events) {
+    const c = detectMultiOutcomeArbitrage(e);
+    if (c) newOpps.push({ id: 'multi_' + e.id, title: e.title || 'Multi-outcome event', ...c, volume: parseFloat(e.volume24hr || 0), liquidity: parseFloat(e.liquidity || 0), url: `https://polymarket.com/event/${e.slug || e.id}` });
+  }
+  
+  state.opportunities = newOpps.sort((a,b) => b.spread - a.spread);
+  renderOpps();
+  document.getElementById('oppCount').textContent = state.opportunities.length;
+  if (state.opportunities.length) {
+    const top = state.opportunities[0];
+    document.getElementById('oppHottest').textContent = `top: ${top.spread.toFixed(2)}%`;
+    if (state.settings.autoExecute && top.spread >= state.settings.minSpread) executeOpportunity(top);
+    else if (state.settings.sound && top.spread >= state.settings.minSpread + 2) beep(660, 80);
+  } else {
+    document.getElementById('oppHottest').textContent = '--';
+  }
+}
+
+function setStatus(on, text) {
+  document.getElementById('statusDot').classList.toggle('off', !on);
+  document.getElementById('statusText').textContent = text;
+}
+
+function renderOpps() {
+  const el = document.getElementById('oppsList');
+  if (!state.opportunities.length) {
+    el.innerHTML = '<div class="empty">Belum ada peluang yang melebihi threshold<br><span style="font-size:11px;opacity:0.6">Coba turunkan Min Spread atau Min Volume</span></div>';
+    return;
+  }
+  el.innerHTML = state.opportunities.map(o => {
+    const cls = o.spread >= 5 ? 'hot' : o.spread >= 3 ? '' : 'warn';
+    const typeLabel = { 'BINARY_SUM': 'YES+NO ARBITRAGE', 'MULTI_SUM': 'MULTI-OUTCOME ARB', 'WIDE_BID_ASK': 'WIDE SPREAD' }[o.type] || o.type;
+    let priceDisplay = '';
+    if (o.type === 'BINARY_SUM') {
+      priceDisplay = `<div class="opp-prices"><div class="price-cell buy"><div class="platform">YES</div><div class="price">$${o.yes.toFixed(3)}</div></div><div class="price-cell sell"><div class="platform">NO</div><div class="price">$${o.no.toFixed(3)}</div></div></div><div style="margin-top:6px;font-size:11px;color:var(--text-faint);font-family:'JetBrains Mono',monospace">SUM: $${o.sum.toFixed(3)} (target: $1.000)</div>`;
+    } else if (o.type === 'MULTI_SUM') {
+      priceDisplay = `<div style="margin-top:6px;font-size:11px;color:var(--text-faint);font-family:'JetBrains Mono',monospace">${o.outcomes.length} outcomes · SUM: $${o.sum.toFixed(3)}</div>`;
+    } else if (o.type === 'WIDE_BID_ASK') {
+      priceDisplay = `<div class="opp-prices"><div class="price-cell buy"><div class="platform">BID</div><div class="price">$${o.bestBid.toFixed(3)}</div></div><div class="price-cell sell"><div class="platform">ASK</div><div class="price">$${o.bestAsk.toFixed(3)}</div></div></div>`;
+    }
+    return `<div class="opp ${cls}" onclick="openOpp('${o.id}')"><div class="opp-head"><div class="opp-title">${escapeHtml(o.title)}</div><div class="opp-spread">+${o.spread.toFixed(2)}%</div></div><div style="font-size:10px;color:var(--text-faint);font-family:'JetBrains Mono',monospace">${typeLabel} · VOL $${(o.volume/1000).toFixed(1)}K · LIQ $${(o.liquidity/1000).toFixed(1)}K</div>${priceDisplay}<div class="strategy-tag">→ ${escapeHtml(o.strategy)}</div></div>`;
+  }).join('');
+}
+
+function openOpp(id) {
+  const o = state.opportunities.find(x => x.id === id);
+  if (!o) return;
+  if (confirm(`Buka di Polymarket?\n\n${o.title}\nSpread: ${o.spread.toFixed(2)}%\nStrategi: ${o.strategy}`)) window.open(o.url, '_blank');
+}
+
+async function executeOpportunity(opp) {
+  if (state.todayPnl <= -state.settings.dailyLoss) {
+    log('err','RISK','Limit kerugian harian tercapai. Auto-execute dimatikan.');
+    state.settings.autoExecute = false;
+    document.getElementById('autoToggle').classList.remove('on');
+    return;
+  }
+  const size = state.settings.maxTrade;
+  if (state.settings.simulation) {
+    const grossProfit = size * (opp.spread / 100);
+    const netProfit = grossProfit * 0.65 - 0.5;
+    const trade = { id: 'sim_' + Date.now(), time: new Date().toISOString(), market: opp.title, strategy: opp.strategy, size, grossProfit, netProfit, spread: opp.spread, mode: 'SIM' };
+    state.history.unshift(trade);
+    if (state.history.length > 50) state.history.pop();
+    state.todayPnl += netProfit;
+    saveState();
+    updateStats();
+    log(netProfit > 0 ? 'win' : 'warn', 'SIM', `Paper: $${size} → ${netProfit >= 0 ? '+' : ''}$${netProfit.toFixed(2)}`);
+  } else {
+    log('err','LIVE','Eksekusi live butuh backend server. Gunakan Polymarket app manual.');
+  }
+}
+
+function renderHistory() {
+  const el = document.getElementById('historyList');
+  if (!state.history.length) { el.innerHTML = '<div class="empty">Belum ada riwayat trade</div>'; return; }
+  el.innerHTML = state.history.slice(0, 30).map(t => {
+    const time = new Date(t.time).toLocaleTimeString('id-ID', {hour12:false});
+    const cls = t.netProfit > 0 ? 'win' : 'err';
+    return `<div class="log-entry ${cls}"><div class="log-time">${time}</div><div class="log-tag">${t.mode}</div><div class="log-msg">${escapeHtml(t.market.slice(0, 60))}${t.market.length > 60 ? '...' : ''} · <strong>${t.netProfit >= 0 ? '+' : ''}$${t.netProfit.toFixed(2)}</strong></div></div>`;
+  }).join('');
+}
+
+function updateStats() {
+  const pnl = state.todayPnl;
+  document.getElementById('todayPnl').textContent = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+  const pct = state.balance > 0 ? (pnl / state.balance * 100) : 0;
+  document.getElementById('todayPnlDelta').textContent = (pct >= 0 ? '+' : '') + pct.toFixed(2) + '%';
+  document.getElementById('balance').textContent = '$' + state.balance.toFixed(2);
+}
+
+function emergencyStop() {
+  if (!confirm('YAKIN? Ini akan menghentikan scanning.')) return;
+  state.scanning = false;
+  state.settings.autoExecute = false;
+  document.getElementById('autoToggle').classList.remove('on');
+  setStatus(false, 'STOPPED');
+  log('warn','STOP','Emergency stop. Refresh halaman untuk mulai lagi.');
+  if (scanTimer) clearInterval(scanTimer);
+}
+
+let scanTimer;
+function startScanning() {
+  if (scanTimer) clearInterval(scanTimer);
+  state.scanning = true;
+  scanCycle();
+  scanTimer = setInterval(() => { if (state.scanning) scanCycle(); }, (state.settings.scanInterval || 5) * 1000);
+}
+
+loadState();
+loadSettingsToUI();
+log('info','BOOT','ARB.SCAN v2.0 dimulai (Polymarket-only)');
+log('info','BOOT','Mode: ' + (state.settings.simulation ? 'SIMULASI' : 'LIVE'));
+log('info','BOOT','3 strategi aktif: Binary Sum · Multi-Outcome · Wide Spread');
+log('warn','BOOT','Baca tab INFO sebelum trade dengan uang nyata');
+renderLog();
+startScanning();
+updateStats();
+
+if ('wakeLock' in navigator) navigator.wakeLock.request('screen').catch(()=>{});
+</script>
+
+</body>
+</html>
